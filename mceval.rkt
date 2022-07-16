@@ -22,11 +22,15 @@
         ((quoted? exp) (text-of-quotation exp))
         ((assignment? exp) (eval-assignment exp env))
         ((definition? exp) (eval-definition exp env))
+        ;;added work
+        ((let? exp) (eval-let exp env))
         ((if? exp) (eval-if exp env))
         ((lambda? exp)
          (make-procedure (lambda-parameters exp)
                          (lambda-body exp)
                          env))
+        ((force? exp) (eval-force exp env))
+        ((delay? exp) (eval-delay exp env))
         ((begin? exp)
          (eval-sequence (begin-actions exp) env))
         ((cond? exp) (mceval (cond->if exp) env))
@@ -131,6 +135,45 @@
   (cons 'lambda (cons parameters body)))
 
 
+;;let
+(define (let? exp)
+  (tagged-list? exp 'let))
+
+(define (eval-let exp env)
+  (eval-sequence (cdr(cdr exp))
+     (extend-environment
+       (getV (car(cdr exp)))
+       (list-of-values (getE (car(cdr exp))) env) env)))
+
+(define (getE exp)
+  (if (null? exp) '()
+  (cons (second (first exp)) (getE (rest exp))))) 
+
+(define (getV exp)
+  (if (null? exp) '()
+  (cons (first (first exp)) (getV (rest exp)))))
+
+;;end let
+
+;;force and delay
+(define (force? exp)
+  (tagged-list? exp 'force))
+
+(define (delay? exp)
+  (tagged-list? exp 'delay))
+
+(define (eval-force exp env)
+  (mceval (car(cdr exp)) env))
+
+(define (eval-delay exp env)
+  (first (cdr exp)))
+
+(define (delay->lambda exp)
+    (format "(lambda () ~a)" (first(cdr exp))))
+
+
+;;end force and delay
+
 (define (if? exp) (tagged-list? exp 'if))
 
 (define (if-predicate exp) (cadr exp))
@@ -198,6 +241,7 @@
             (make-if (cond-predicate first)
                      (sequence->exp (cond-actions first))
                      (expand-clauses rest))))))
+
 
 ;;;SECTION 4.1.3
 
@@ -286,6 +330,8 @@
 
 ;;;SECTION 4.1.4
 
+
+
 (define (setup-environment)
   (let ((initial-env
          (extend-environment (primitive-procedure-names)
@@ -293,12 +339,39 @@
                              the-empty-environment)))
     (define-variable! 'true true initial-env)
     (define-variable! 'false false initial-env)
-    initial-env))
+    initial-env)
+)
 
 (define (primitive-procedure? proc)
   (tagged-list? proc 'primitive))
 
 (define (primitive-implementation proc) (cadr proc))
+
+;;error 
+(define (primitive-abort-interpreter)
+  (error "Metacircular Interpreter Aborted"))
+
+;;and
+(define (and . inputs)
+  (andTemp inputs))
+
+(define (andTemp inputs)
+  (if (= (length inputs) 0) true
+      (if (= (length inputs) 1) (car inputs)
+          (if (car inputs) (andTemp (cdr inputs)) false))))
+
+;;or
+(define (or . inputs)
+  (orTemp inputs))
+
+(define (orTemp inputs)
+  (if (= (length inputs) 0) false
+      (if (= (length inputs) 1) (car inputs)
+          (if (car inputs) true (orTemp (cdr inputs))))))
+
+
+
+
 
 (define primitive-procedures
   (list (list 'car car)
@@ -306,7 +379,20 @@
         (list 'cons cons)
         (list 'null? null?)
 ;;      more primitives
-        ))
+        (list '+ +)
+        (list '* *)
+        (list '- -)
+        (list '/ /)
+        (list '< <)
+        (list '<= <=)
+        (list '= =)
+        (list '>= >=)
+        (list '> >)
+        (list 'and and)
+        (list 'or or)
+        (list 'error primitive-abort-interpreter)
+       ))
+
 
 (define (primitive-procedure-names)
   (map car
